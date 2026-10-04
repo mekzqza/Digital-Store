@@ -18,7 +18,7 @@ src/shop.js              หมวดหมู่, สินค้า, รีว
 src/admin.js             แดชบอร์ด, สินค้า, หมวดหมู่, คำสั่งซื้อ, ลูกค้า, ไฟล์, การชำระเงิน, นำเข้า/ส่งออก, ตั้งค่า
 test/                    node:test
 nginx/                   reverse proxy ใน compose: http.conf (port 80), https.conf.template (port 443), cert.sh (ขอ/ต่ออายุ cert)
-lab-docker/              เฉพาะ VPS ของ sukpat.dev ที่ใช้ nginx กลางร่วมกับ project อื่น — เครื่องอื่นไม่ต้องสนใจ
+lab-docker/              เฉพาะ VPS ที่รันร้านอยู่ตอนนี้ ซึ่งใช้ nginx กลางร่วมกับ project อื่น — เครื่องอื่นไม่ต้องสนใจ
 web/app/(shop)/          หน้าลูกค้า: หน้าแรก ร้านค้า หมวดหมู่ สินค้า ตะกร้า checkout คำสั่งซื้อ คลัง โปรไฟล์
 web/app/login/           เข้าสู่ระบบ / สมัครสมาชิก (เต็มจอ ไม่มีแถบนำทาง)
 web/app/admin/           หน้าแอดมิน (desktop ≥1280px เท่านั้น)
@@ -73,12 +73,18 @@ curl https://<DOMAIN>/api/health      # → {"ok":true}
 COMPOSE_FILE=docker-compose.yml:lab-docker/compose.yml
 ```
 
-ต้องมี cert ที่ `/etc/letsencrypt/live/digital-store.sukpat.dev/` ก่อน แล้ว:
+ร้านเปิดที่ `https://digital.product.thiraphatchakon.me` — A record ของชื่อนี้ชี้มาที่ VPS โดยใน Cloudflare ต้องตั้งเป็น
+**DNS only**: ใบรับรองฟรีของ Cloudflare ไม่ครอบคลุม subdomain สองชั้น และ proxy จำกัดขนาดอัปโหลดที่ 100 MB
+
+ต้องมี cert ที่ `/etc/letsencrypt/live/digital.product.thiraphatchakon.me/` ก่อน (nginx กลางจะ start ไม่ขึ้นถ้า conf ชี้ cert ที่ไม่มี) แล้ว:
 
 ```bash
-cp lab-docker/digital-store.sukpat.dev.conf ~/lab-docker/nginx/conf.d/
+cp lab-docker/digital.product.thiraphatchakon.me.conf ~/lab-docker/nginx/conf.d/
 docker exec lab-docker-nginx-1 nginx -t && docker exec lab-docker-nginx-1 nginx -s reload
 ```
+
+ที่อยู่เดิม `digital-store.sukpat.dev` ยังใช้ conf เดิมที่ติดตั้งไว้บน VPS — แอป desktop/มือถือที่ build ไว้
+และ Stripe webhook ยังชี้ไปที่นั่น ย้ายสองอย่างนี้ก่อนถ้าจะลบ conf เดิม
 
 ### Stripe webhook
 

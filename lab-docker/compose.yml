@@ -1,5 +1,5 @@
 # sukpat.dev's VPS only. Ports 80/443 there belong to the shared nginx of the lab-docker project, so this
-# project's own nginx stays off and api/web join that network instead (digital-store.sukpat.dev.conf).
+# project's own nginx stays off and api/web join that network instead (digital.product.thiraphatchakon.me.conf).
 # Enable with COMPOSE_FILE=docker-compose.yml:lab-docker/compose.yml in .env.
 services:
   nginx:
