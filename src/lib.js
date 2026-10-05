@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
+import nodemailer from 'nodemailer';
 import pg from 'pg';
 
 pg.types.setTypeParser(1700, Number); // numeric → JS number (prices fit easily)
@@ -106,6 +107,40 @@ export function verifyDownload(itemId, exp, sig, now = Date.now()) {
   if (!(Number(exp) > now / 1000)) return false;
   const good = crypto.createHmac('sha256', secret()).update(`${itemId}.${exp}`).digest('base64url');
   return typeof sig === 'string' && sig.length === good.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(good));
+}
+
+// ---- receipt email: sent from the shop's Gmail (SMTP + app password) when an order turns PAID ----
+// No GMAIL_USER / GMAIL_APP_PASSWORD in .env = no email is sent.
+const { GMAIL_USER, GMAIL_APP_PASSWORD } = process.env;
+export const mailer = GMAIL_USER && GMAIL_APP_PASSWORD
+  ? nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD.replace(/\s/g, '') }, // Google shows it in groups of four
+  })
+  : null;
+
+// o: order_no, total, paid_at, billing_name, billing_email, items [{ name, price }] · s: getSettings()
+export function receiptMail(o, s) {
+  const baht = (n) => '฿' + Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 });
+  return {
+    from: { name: s.store_name, address: GMAIL_USER }, // replies land in the shop's Gmail inbox
+    to: o.billing_email,
+    subject: `ใบเสร็จรับเงิน ${o.order_no} — ${s.store_name}`,
+    text: [
+      `ขอบคุณที่สั่งซื้อจาก ${s.store_name}`,
+      '',
+      `เลขคำสั่งซื้อ: ${o.order_no}`,
+      // the container runs in UTC
+      `วันที่ชำระเงิน: ${new Date(o.paid_at).toLocaleString('th-TH', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Asia/Bangkok' })}`,
+      `ผู้ซื้อ: ${o.billing_name}`,
+      '',
+      ...o.items.map((i) => `• ${i.name} — ${baht(i.price)}`),
+      `รวมทั้งสิ้น: ${baht(o.total)}`,
+      '',
+      `ดาวน์โหลดสินค้า: https://${process.env.DOMAIN}/library`,
+      `สอบถามเพิ่มเติม: ${s.support_email}`,
+    ].join('\n'),
+  };
 }
 
 // ---- list helpers ----

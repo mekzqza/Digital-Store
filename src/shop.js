@@ -3,7 +3,7 @@ import { Router } from 'express';
 import Stripe from 'stripe';
 import {
   q, HttpError, EMAIL_RE, UPLOAD_DIR, PUBLIC_SETTINGS, getSettings, optionalAuth, requireAuth,
-  signDownload, verifyDownload, page, filters, numericParams,
+  signDownload, verifyDownload, page, filters, numericParams, mailer, receiptMail,
 } from './lib.js';
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_missing');
@@ -194,9 +194,14 @@ export async function stripeWebhook(req, res) {
     const { rows: [o] } = await q(
       `UPDATE orders SET status = 'PAID', paid_at = now(), failure_code = NULL
        WHERE payment_intent = $1 AND status IN ('PENDING', 'FAILED') RETURNING id, user_id`, [pi.id]);
-    if (o) await q(
-      `DELETE FROM cart_items WHERE user_id = $1 AND product_id IN (SELECT product_id FROM order_items WHERE order_id = $2)`,
-      [o.user_id, o.id]);
+    if (o) {
+      await q(
+        `DELETE FROM cart_items WHERE user_id = $1 AND product_id IN (SELECT product_id FROM order_items WHERE order_id = $2)`,
+        [o.user_id, o.id]);
+      // Not awaited: Stripe gets its 200 right away and a mail problem can't turn a paid order into a retried webhook.
+      // ponytail: one attempt, a failure is only logged. Add orders.receipt_sent_at + a resend action if a receipt must never be lost.
+      sendReceipt(o.id).catch((e) => console.error('receipt email failed:', e.message));
+    }
   } else if (ev.type === 'payment_intent.payment_failed') {
     const err = pi.last_payment_error;
     await q(`UPDATE orders SET status = 'FAILED', failure_code = $2 WHERE payment_intent = $1 AND status = 'PENDING'`,
@@ -211,6 +216,14 @@ const ORDER_ITEMS = `(SELECT coalesce(json_agg(json_build_object(
     'coverUrl', '/api/covers/' || p.cover, 'fileTypes', p.file_types, 'fileSize', p.file_size,
     'downloads', oi.downloads) ORDER BY oi.id), '[]')
   FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = o.id) AS items`;
+
+async function sendReceipt(orderId) {
+  if (!mailer) return;
+  const { rows: [o] } = await q(
+    `SELECT o.order_no, o.total, o.paid_at, o.billing_name, o.billing_email, ${ORDER_ITEMS}
+     FROM orders o WHERE o.id = $1`, [orderId]);
+  await mailer.sendMail(receiptMail(o, await getSettings()));
+}
 
 shop.get('/orders', requireAuth, async (req, res) => {
   const f = filters('o.user_id = $1');

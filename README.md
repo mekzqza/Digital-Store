@@ -53,6 +53,7 @@ curl https://<DOMAIN>/api/health      # → {"ok":true}
 | `STRIPE_WEBHOOK_SECRET` | `whsec_…` จากหน้า webhook ของ Stripe |
 | `NEXT_PUBLIC_STRIPE_PK` | `pk_test_…` — ฝังตอน build หน้าเว็บ เปลี่ยนแล้วต้อง `docker compose build web` |
 | `GOOGLE_CLIENT_ID` | ไม่บังคับ — OAuth client ID (Web application) สำหรับปุ่ม "ดำเนินการต่อด้วย Google" เว้นว่าง = ไม่แสดงปุ่ม ฝังตอน build เช่นกัน |
+| `GMAIL_USER` `GMAIL_APP_PASSWORD` | ไม่บังคับ — บัญชี Gmail ของร้านที่ใช้ส่งใบเสร็จหลังชำระเงินสำเร็จ เว้นว่าง = ไม่ส่ง · รหัสต้องเป็น "รหัสผ่านสำหรับแอป" 16 ตัว (เปิด 2-Step Verification แล้วสร้างที่ <https://myaccount.google.com/apppasswords>) ไม่ใช่รหัสเข้า Gmail |
 | `POSTGRES_PASSWORD` | ไม่บังคับ — Postgres ไม่เปิด port ออกนอกเครื่องและมีแค่ `api` ที่ต่อถึง จึงใช้ค่าเริ่มต้นได้ ถ้าจะตั้งต้องตั้งก่อน start ครั้งแรก (ตัวอักษร/ตัวเลขเท่านั้น) |
 | `APP_SECRET` | ไม่บังคับ — กุญแจเซ็นลิงก์ดาวน์โหลด ไม่ตั้ง = สุ่มใหม่ทุกครั้งที่ API start (ลิงก์อายุ 5 นาทีที่ออกไว้ก่อน restart จะใช้ไม่ได้) |
 
