@@ -1,15 +1,28 @@
 -- Runs once on first `docker compose up` (mounted into /docker-entrypoint-initdb.d).
+-- A database that already exists never sees later edits to this file: repeat them in migrate() in src/lib.js.
 
 CREATE TABLE users (
   id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   email         text NOT NULL UNIQUE,
   name          text NOT NULL,
   password_hash text,                  -- NULL = Google-only account (no password login until one is set)
-  role          text NOT NULL DEFAULT 'customer' CHECK (role IN ('customer', 'admin')), -- admins set here only
+  email_verified boolean NOT NULL DEFAULT false, -- proven by the link in the verification email, or by Google sign-in
+  role         text NOT NULL DEFAULT 'customer' CHECK (role IN ('customer', 'admin')), -- admins set here only
   disabled      boolean NOT NULL DEFAULT false, -- suspended from the admin Customers page
   failed_logins int NOT NULL DEFAULT 0,
   locked_until  timestamptz,
   created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+-- Registrations waiting for the link in the verification email. The row becomes a users row when the link is
+-- clicked, so an address nobody confirmed is never an account and can't keep its real owner from registering.
+CREATE TABLE pending_users (
+  email         text PRIMARY KEY,
+  name          text NOT NULL,
+  password_hash text NOT NULL,
+  token_hash    text NOT NULL UNIQUE,
+  expires_at    timestamptz NOT NULL DEFAULT now() + interval '24 hours',
+  sent_at       timestamptz NOT NULL DEFAULT now() -- the last verification email, for the resend limit
 );
 
 CREATE TABLE sessions (

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { HttpError, UPLOAD_DIR, seedAdmin } from './lib.js';
+import { HttpError, UPLOAD_DIR, migrate, seedAdmin } from './lib.js';
 import { auth } from './auth.js';
 import { shop, stripeWebhook } from './shop.js';
 import { admin } from './admin.js';
@@ -29,5 +29,6 @@ app.use((err, req, res, next) => {
   res.status(status).json({ error: status === 500 ? 'เกิดข้อผิดพลาดในระบบ' : err.message, ...err.extra });
 });
 
+await migrate();
 await seedAdmin();
 app.listen(process.env.PORT || 4000, () => console.log(`api on :${process.env.PORT || 4000}`));

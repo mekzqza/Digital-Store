@@ -24,6 +24,8 @@ export default function Login() {
   const [touched, setTouched] = useState({});
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false); // register answered 202: the account waits for the link in the email
+  const [note, setNote] = useState(null);
 
   const errs = reg ? { name: rules.name(f.name), email: rules.email(f.email), password: rules.password(f.password) } : {};
   const valid = !Object.values(errs).some(Boolean);
@@ -35,16 +37,18 @@ export default function Login() {
     router.replace(next?.startsWith('/') && !next.startsWith('//') ? next : '/'); // only same-site redirects
   }
 
-  async function submit(e) {
-    e.preventDefault();
-    setTouched({ name: true, email: true, password: true });
-    if (!valid) return;
-    setBusy(true); setError(null);
+  // register = POST /auth/register, which is also how the verification email is sent again; otherwise sign in
+  async function send(register) {
+    setBusy(true); setError(null); setNote(null);
     try {
-      const r = reg
+      const r = register
         ? await api('/auth/register', { method: 'POST', body: { name: f.name, email: f.email, password: f.password } })
         : await api('/auth/login', { method: 'POST', body: { email: f.email, password: f.password, remember: f.remember } });
-      await enter(r.token);
+      if (r.token) await enter(r.token);
+      else {
+        if (sent) setNote('ส่งอีเมลอีกครั้งแล้ว ลิงก์ในฉบับก่อนหน้าใช้ไม่ได้แล้ว');
+        setSent(true);
+      }
     } catch (e) {
       const left = e.data?.attemptsLeft;
       setError(e.status === 423 ? 'บัญชีถูกล็อก 15 นาทีเพราะใส่รหัสผิดหลายครั้ง'
@@ -52,6 +56,12 @@ export default function Login() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function submit(e) {
+    e.preventDefault();
+    setTouched({ name: true, email: true, password: true });
+    if (valid) send(reg);
   }
 
   const field = (k, label, type, autoComplete) => (
@@ -73,30 +83,49 @@ export default function Login() {
         </div>
         <small>ชำระเงินปลอดภัย · เข้าถึงได้ทันที · คลังส่วนตัวของคุณ</small>
       </div>
-      <div className="auth-r">
-        <Title title={reg ? 'สร้างบัญชีของคุณ' : 'ยินดีต้อนรับกลับมา'}
-          desc={reg ? 'เริ่มค้นพบสินค้าที่สร้างมาเพื่อครีเอเตอร์' : 'เข้าสู่ระบบเพื่อไปยังคลังของคุณ'} />
-        <form onSubmit={submit} noValidate>
-          {error && <div className="alert">{error}</div>}
-          {reg && field('name', 'ชื่อ-นามสกุล', 'text', 'name')}
-          {field('email', 'อีเมล', 'email', 'email')}
-          {field('password', 'รหัสผ่าน', 'password', reg ? 'new-password' : 'current-password')}
-          {!reg && (
-            <label className="chk"><input type="checkbox" checked={f.remember} onChange={(e) => setF({ ...f, remember: e.target.checked })} />จำฉันไว้ 30 วัน</label>
-          )}
-          <button className="btn btnl" disabled={busy}>{reg ? 'สร้างบัญชี' : 'เข้าสู่ระบบ'}</button>
-          {GOOGLE_ID && (
-            <>
-              <span className="alt">หรือดำเนินการต่อด้วย Google</span>
-              <GoogleButton onToken={enter} onError={(e) => setError(e.message)} />
-            </>
-          )}
-          <span className="alt">
-            {reg ? 'มีบัญชีอยู่แล้ว? ' : 'ยังไม่มีบัญชี? '}
-            <Link href={other}>{reg ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}</Link>
-          </span>
-        </form>
-      </div>
+      {reg && sent ? (
+        // The link is usually opened somewhere else (a phone, another tab): this tab keeps the typed password,
+        // so signing in afterwards is one click.
+        <div className="auth-r">
+          <Title title="ตรวจอีเมลของคุณ"
+            desc={`เราส่งลิงก์ยืนยันไปที่ ${f.email} กดลิงก์ในอีเมลเพื่อเปิดใช้บัญชี (ลิงก์ใช้ได้ 24 ชั่วโมง)`} />
+          <form onSubmit={(e) => { e.preventDefault(); send(false); }}>
+            {error && <div className="alert">{error}</div>}
+            {note && <div className="alert ok">{note}</div>}
+            <button className="btn btnl" disabled={busy}>ยืนยันแล้ว — เข้าสู่ระบบ</button>
+            <button type="button" className="btn2 btnl" disabled={busy} onClick={() => send(true)}>ส่งอีเมลอีกครั้ง</button>
+            <span className="alt">
+              ไม่เห็นอีเมล? ดูในโฟลเดอร์สแปม หรือ{' '}
+              <button type="button" className="lnk" onClick={() => { setSent(false); setError(null); }}>แก้ไขอีเมล</button>
+            </span>
+          </form>
+        </div>
+      ) : (
+        <div className="auth-r">
+          <Title title={reg ? 'สร้างบัญชีของคุณ' : 'ยินดีต้อนรับกลับมา'}
+            desc={reg ? 'เริ่มค้นพบสินค้าที่สร้างมาเพื่อครีเอเตอร์' : 'เข้าสู่ระบบเพื่อไปยังคลังของคุณ'} />
+          <form onSubmit={submit} noValidate>
+            {error && <div className="alert">{error}</div>}
+            {reg && field('name', 'ชื่อ-นามสกุล', 'text', 'name')}
+            {field('email', 'อีเมล', 'email', 'email')}
+            {field('password', 'รหัสผ่าน', 'password', reg ? 'new-password' : 'current-password')}
+            {!reg && (
+              <label className="chk"><input type="checkbox" checked={f.remember} onChange={(e) => setF({ ...f, remember: e.target.checked })} />จำฉันไว้ 30 วัน</label>
+            )}
+            <button className="btn btnl" disabled={busy}>{reg ? 'สร้างบัญชี' : 'เข้าสู่ระบบ'}</button>
+            {GOOGLE_ID && (
+              <>
+                <span className="alt">หรือดำเนินการต่อด้วย Google</span>
+                <GoogleButton onToken={enter} onError={(e) => setError(e.message)} />
+              </>
+            )}
+            <span className="alt">
+              {reg ? 'มีบัญชีอยู่แล้ว? ' : 'ยังไม่มีบัญชี? '}
+              <Link href={other}>{reg ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}</Link>
+            </span>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

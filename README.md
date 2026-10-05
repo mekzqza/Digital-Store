@@ -12,14 +12,14 @@
 ```
 db/schema.sql            ตารางทั้งหมด + หมวดหมู่เริ่มต้น (รันอัตโนมัติครั้งแรกที่สร้าง volume ของ Postgres)
 src/app.js               Express app, error handler, mount routes
-src/lib.js               DB pool, รหัสผ่าน, session token, signed download URL, ค่าตั้งร้าน, CSV
-src/auth.js              สมัคร / ล็อกอิน / Google / ล็อกอินแอดมิน / โปรไฟล์ / logout
+src/lib.js               DB pool, migrate, รหัสผ่าน, session token, signed download URL, อีเมล, ค่าตั้งร้าน, CSV
+src/auth.js              สมัคร / ยืนยันอีเมล / ล็อกอิน / Google / ล็อกอินแอดมิน / โปรไฟล์ / logout
 src/shop.js              หมวดหมู่, สินค้า, รีวิว, ตะกร้า, checkout, Stripe webhook, คำสั่งซื้อ, คลัง, ดาวน์โหลด
 src/admin.js             แดชบอร์ด, สินค้า, หมวดหมู่, คำสั่งซื้อ, ลูกค้า, ไฟล์, การชำระเงิน, นำเข้า/ส่งออก, ตั้งค่า
 test/                    node:test
 nginx/                   reverse proxy ใน compose: http.conf (port 80), https.conf.template (port 443), cert.sh (ขอ/ต่ออายุ cert)
 lab-docker/              เฉพาะ VPS ที่รันร้านอยู่ตอนนี้ ซึ่งใช้ nginx กลางร่วมกับ project อื่น — เครื่องอื่นไม่ต้องสนใจ
-web/app/(shop)/          หน้าลูกค้า: หน้าแรก ร้านค้า หมวดหมู่ สินค้า ตะกร้า checkout คำสั่งซื้อ คลัง โปรไฟล์
+web/app/(shop)/          หน้าลูกค้า: หน้าแรก ร้านค้า หมวดหมู่ สินค้า ตะกร้า checkout คำสั่งซื้อ คลัง โปรไฟล์ ยืนยันอีเมล
 web/app/login/           เข้าสู่ระบบ / สมัครสมาชิก (เต็มจอ ไม่มีแถบนำทาง)
 web/app/admin/           หน้าแอดมิน (desktop ≥1280px เท่านั้น)
 web/components/          ui.js (ชิ้นส่วนร่วม), checkout.js, admin.js
@@ -53,12 +53,12 @@ curl https://<DOMAIN>/api/health      # → {"ok":true}
 | `STRIPE_WEBHOOK_SECRET` | `whsec_…` จากหน้า webhook ของ Stripe |
 | `NEXT_PUBLIC_STRIPE_PK` | `pk_test_…` — ฝังตอน build หน้าเว็บ เปลี่ยนแล้วต้อง `docker compose build web` |
 | `GOOGLE_CLIENT_ID` | ไม่บังคับ — OAuth client ID (Web application) สำหรับปุ่ม "ดำเนินการต่อด้วย Google" เว้นว่าง = ไม่แสดงปุ่ม ฝังตอน build เช่นกัน |
-| `GMAIL_USER` `GMAIL_APP_PASSWORD` | ไม่บังคับ — บัญชี Gmail ของร้านที่ใช้ส่งใบเสร็จหลังชำระเงินสำเร็จ เว้นว่าง = ไม่ส่ง · รหัสต้องเป็น "รหัสผ่านสำหรับแอป" 16 ตัว (เปิด 2-Step Verification แล้วสร้างที่ <https://myaccount.google.com/apppasswords>) ไม่ใช่รหัสเข้า Gmail |
+| `GMAIL_USER` `GMAIL_APP_PASSWORD` | ไม่บังคับ — บัญชี Gmail ของร้านที่ใช้ส่งลิงก์ยืนยันอีเมลตอนสมัครสมาชิก และใบเสร็จหลังชำระเงินสำเร็จ เว้นว่าง = ไม่ส่งอะไรเลย และสมัครสมาชิกได้ทันทีโดยไม่ยืนยันอีเมล · รหัสต้องเป็น "รหัสผ่านสำหรับแอป" 16 ตัว (เปิด 2-Step Verification แล้วสร้างที่ <https://myaccount.google.com/apppasswords>) ไม่ใช่รหัสเข้า Gmail |
 | `POSTGRES_PASSWORD` | ไม่บังคับ — Postgres ไม่เปิด port ออกนอกเครื่องและมีแค่ `api` ที่ต่อถึง จึงใช้ค่าเริ่มต้นได้ ถ้าจะตั้งต้องตั้งก่อน start ครั้งแรก (ตัวอักษร/ตัวเลขเท่านั้น) |
 | `APP_SECRET` | ไม่บังคับ — กุญแจเซ็นลิงก์ดาวน์โหลด ไม่ตั้ง = สุ่มใหม่ทุกครั้งที่ API start (ลิงก์อายุ 5 นาทีที่ออกไว้ก่อน restart จะใช้ไม่ได้) |
 
-> **ฐานข้อมูล:** `db/schema.sql` รันเฉพาะตอน volume `pgdata` ถูกสร้างครั้งแรก ถ้าเคยรัน schema รุ่นก่อนไว้แล้ว
-> ต้องลบ volume (`docker compose down -v` — ข้อมูลหายทั้งหมด) หรือเขียน migration เอง
+> **ฐานข้อมูล:** `db/schema.sql` รันเฉพาะตอน volume `pgdata` ถูกสร้างครั้งแรก ตารางและคอลัมน์ที่เพิ่มทีหลัง
+> ต้องใส่ซ้ำใน `migrate()` (`src/lib.js`) ด้วย — API รันมันทุกครั้งที่ start ฐานข้อมูลเดิมจึงตามทันเองโดยข้อมูลไม่หาย
 
 ### แอป desktop และมือถือ
 
@@ -96,13 +96,22 @@ Stripe Dashboard (Test mode) → Developers → Webhooks → Add endpoint
 
 สถานะ PAID / FAILED มาจาก webhook เท่านั้น — ถ้าจ่ายแล้ว order ค้าง PENDING ให้เช็กตรงนี้ก่อน
 
+### ยืนยันอีเมลตอนสมัคร
+
+เมื่อตั้ง `GMAIL_USER` / `GMAIL_APP_PASSWORD` แล้ว การสมัครด้วยอีเมลและรหัสผ่านจะยังไม่สร้างบัญชี: ร้านส่งอีเมลที่มีลิงก์
+`https://<DOMAIN>/verify?token=…` (ใช้ได้ 24 ชั่วโมง ใช้ได้ครั้งเดียว) ไปให้ บัญชีถูกสร้างเมื่อกดลิงก์ แล้วจึงเข้าสู่ระบบด้วยรหัสผ่านที่ตั้งไว้
+สมัครอีเมลเดิมซ้ำ = ส่งอีเมลใหม่พร้อมลิงก์ใหม่ (ลิงก์เก่าใช้ไม่ได้) · ความถี่ที่ส่งได้กำหนดใน `verifyMailLimit()` (`src/lib.js`)
+
+ลิงก์ใช้ `DOMAIN` จาก `.env` — ถ้าร้านเปิดหลายชื่อ ลิงก์จะพาไปที่ชื่อนี้เสมอ · บัญชีที่มีอยู่ก่อนเปิดใช้ระบบนี้ยังเข้าได้ตามเดิม
+
 ### Google sign-in (ไม่บังคับ)
 
 Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web application)
 เพิ่ม `https://<DOMAIN>` ใน Authorized JavaScript origins แล้วใส่ client ID ใน `GOOGLE_CLIENT_ID`
 
-บัญชีที่สมัครด้วยรหัสผ่านไว้ก่อน แล้วมาเข้าด้วย Google อีเมลเดียวกัน: รหัสผ่านเดิมจะถูกล้าง
-(การสมัครไม่ได้ยืนยันอีเมล จึงไม่รู้ว่าใครตั้งรหัสนั้น) ตั้งรหัสใหม่ได้ที่หน้าโปรไฟล์ — แอดมินที่ใช้หน้า `/admin/login` ต้องมีรหัสผ่าน
+บัญชีที่ยังไม่เคยยืนยันอีเมล (สมัครไว้ก่อนมีระบบยืนยัน หรือสมัครตอนไม่ได้ตั้ง Gmail) แล้วมาเข้าด้วย Google อีเมลเดียวกัน:
+รหัสผ่านเดิมจะถูกล้าง เพราะไม่รู้ว่าใครตั้งรหัสนั้น ตั้งรหัสใหม่ได้ที่หน้าโปรไฟล์ — แอดมินที่ใช้หน้า `/admin/login` ต้องมีรหัสผ่าน ·
+บัญชีที่ยืนยันอีเมลแล้ว (กดลิงก์ หรือเคยเข้าด้วย Google) รหัสผ่านอยู่ครบ
 
 ### แอดมิน
 
@@ -136,8 +145,9 @@ error ตอบเป็น `{ "error": "ข้อความ", ...extra }` · 
 
 | Method | Path | Auth | หมายเหตุ |
 |---|---|---|---|
-| POST | `/auth/register` | – | `{name,email,password}` → `{token,user}` |
-| POST | `/auth/login` | – | `{email,password,remember}` · ผิด 5 ครั้งล็อก 15 นาที (423) · บัญชีถูกระงับ → 403 |
+| POST | `/auth/register` | – | `{name,email,password}` → 202 `{verify:true,email}` และส่งลิงก์ยืนยันไปที่อีเมล (ยังไม่มี token) · ส่งถี่เกิน → 429 · ส่งอีเมลไม่ได้ → 502 · ไม่ได้ตั้ง Gmail → 201 `{token,user}` ทันที |
+| POST | `/auth/verify` | – | `{token}` จากลิงก์ในอีเมล → `{email}` (สร้างบัญชี ไม่คืน session) · ลิงก์ผิด หมดอายุ หรือใช้แล้ว → 400 |
+| POST | `/auth/login` | – | `{email,password,remember}` · ผิด 5 ครั้งล็อก 15 นาที (423) · บัญชีถูกระงับ หรือยังไม่ได้ยืนยันอีเมล → 403 |
 | POST | `/auth/google` | – | `{credential}` (ID token จาก Google Identity Services) · ไม่ได้ตั้ง `GOOGLE_CLIENT_ID` → 501 |
 | POST | `/auth/admin/login` | – | รหัสถูกแต่ไม่ใช่แอดมิน → 403 |
 | POST | `/auth/logout` · GET `/auth/me` | user | `me` คืน `cartCount` และ `user.has_password` |
@@ -171,10 +181,11 @@ error ตอบเป็น `{ "error": "ข้อความ", ...extra }` · 
 ## แอปมือถือ (App Inventor)
 
 - เก็บ token จาก `/auth/login` แล้วส่ง header `Authorization: Bearer …` ทุก request
+- `/auth/register` ตอบ 202 โดยไม่มี token (ต้องกดลิงก์ในอีเมลก่อน): แสดงข้อความให้ไปตรวจอีเมล แล้วค่อยเรียก `/auth/login`
 - WebViewer ดาวน์โหลดไฟล์เองไม่ได้: หน้าเว็บเรียก `window.AppInventor.setWebViewString(url)`
   → ในแอปเพิ่ม block `WebViewer.WebViewStringChange` → `ActivityStarter` (Action `android.intent.action.VIEW`, DataUri = ค่าที่ได้) เพื่อเปิดใน Chrome
 - `/checkout` ไม่บังคับ `billing` — ไม่ส่งก็ใช้ชื่อและอีเมลของบัญชี
 
 ## ยังไม่ได้ทำ
 
-ลืมรหัสผ่าน · ยืนยันอีเมลตอนสมัคร · โค้ดส่วนลด · ใบเสร็จ PDF · แกลเลอรีภาพตัวอย่าง · ตัวเล่นคอร์ส · rich text editor (ตอนนี้ใช้ textarea + Markdown)
+ลืมรหัสผ่าน · โค้ดส่วนลด · ใบเสร็จ PDF · แกลเลอรีภาพตัวอย่าง · ตัวเล่นคอร์ส · rich text editor (ตอนนี้ใช้ textarea + Markdown)

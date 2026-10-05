@@ -40,6 +40,15 @@ export async function checkPassword(pw, stored) {
   return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), await scrypt(pw, salt, 64));
 }
 
+// ---- schema added since the first release ----
+// db/schema.sql only runs when Postgres creates a brand-new database, so a server that already has data gets
+// the later additions from here at every start. Keep the two in step; each statement must be safe to repeat.
+export const migrate = () => q(`
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified boolean NOT NULL DEFAULT false;
+  CREATE TABLE IF NOT EXISTS pending_users (
+    email text PRIMARY KEY, name text NOT NULL, password_hash text NOT NULL, token_hash text NOT NULL UNIQUE,
+    expires_at timestamptz NOT NULL DEFAULT now() + interval '24 hours', sent_at timestamptz NOT NULL DEFAULT now());`);
+
 // ---- first admin: ADMIN_EMAIL / ADMIN_PASSWORD from .env, so a fresh server needs no SQL ----
 export async function seedAdmin() {
   const email = process.env.ADMIN_EMAIL?.trim().toLowerCase(); // login() looks accounts up lowercased
@@ -55,7 +64,7 @@ export async function seedAdmin() {
 }
 
 // ---- sessions: opaque Bearer tokens (App Inventor can't use cookies) ----
-const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
+export const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 export async function createSession(userId, days) {
   const token = crypto.randomBytes(32).toString('base64url');
   await q(`INSERT INTO sessions VALUES ($1, $2, now() + make_interval(days => $3))`, [sha(token), userId, days]);
@@ -109,8 +118,9 @@ export function verifyDownload(itemId, exp, sig, now = Date.now()) {
   return typeof sig === 'string' && sig.length === good.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(good));
 }
 
-// ---- receipt email: sent from the shop's Gmail (SMTP + app password) when an order turns PAID ----
-// No GMAIL_USER / GMAIL_APP_PASSWORD in .env = no email is sent.
+// ---- email from the shop's Gmail (SMTP + app password): the link that confirms a new account, and the
+// receipt when an order turns PAID ----
+// No GMAIL_USER / GMAIL_APP_PASSWORD in .env = no email is sent, and registering opens the account unverified.
 const { GMAIL_USER, GMAIL_APP_PASSWORD } = process.env;
 export const mailer = GMAIL_USER && GMAIL_APP_PASSWORD
   ? nodemailer.createTransport({
@@ -118,6 +128,29 @@ export const mailer = GMAIL_USER && GMAIL_APP_PASSWORD
     auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD.replace(/\s/g, '') }, // Google shows it in groups of four
   })
   : null;
+
+// Anyone can type any address into the register form, and every try makes the shop's Gmail send a mail
+// (Gmail stops at about 500 a day). → null = send it, or the Thai message for the 429.
+// secondsSinceLast: since the last mail to this address, null = none yet
+// ipLastHour: mails this IP asked for in the last hour
+export function verifyMailLimit({ secondsSinceLast, ipLastHour }) {
+  // TODO(human)
+  return null;
+}
+
+// The one mail a stranger can make the shop send, so nothing they typed (the name) goes into it: only the link.
+export function verifyMail(to, link, s) {
+  const note = 'ลิงก์ใช้ได้ 24 ชั่วโมง ถ้าคุณไม่ได้สมัครสมาชิก ไม่ต้องทำอะไร บัญชีจะไม่ถูกสร้าง';
+  return {
+    from: { name: s.store_name, address: GMAIL_USER },
+    to,
+    subject: `ยืนยันอีเมลของคุณ — ${s.store_name}`,
+    text: [`กดลิงก์นี้เพื่อยืนยันอีเมลและเปิดใช้บัญชี ${s.store_name} ของคุณ:`, link, '', note].join('\n'),
+    html: `<p>กดปุ่มด้านล่างเพื่อยืนยันอีเมลและเปิดใช้บัญชีของคุณ</p>
+<p><a href="${link}" style="display:inline-block;padding:12px 24px;border-radius:8px;background:#4f46e5;color:#fff;text-decoration:none;font-weight:600">ยืนยันอีเมล</a></p>
+<p style="color:#667085;font-size:13px">${note}</p>`,
+  };
+}
 
 // o: order_no, total, paid_at, billing_name, billing_email, items [{ name, price }] · s: getSettings()
 export function receiptMail(o, s) {
